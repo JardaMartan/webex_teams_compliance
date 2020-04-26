@@ -4,23 +4,23 @@ This is a sample implementation of [Compliance](https://developer.webex.com/docs
 
 ## How to run it
 1. **Create a new Webex Teams integration**
-  1. login to https://developer.webex.com
-  2. click on your avatar in the upper right corner and select **[My Webex Apps](https://developer.webex.com/my-apps)**
-  3. click on **[Create New App](https://developer.webex.com/my-apps/new)** and select **Create an Integration**
-  4. set the **Redirect URI** to `http://localhost:5050/manager`
-  5. fill in the required fields and select Scopes `spark:people_read` and all that start with `spark-compliance` (`spark-compliance:events_read`, `spark-compliance:memberships_write`, etc.)
-  6. click **Save**
-  7. create a copy of `.env_sample` (for example `.env_local`)
-  8. copy & paste **Integration ID**, **Client ID** and **Client Secret** to the appropriate variables in `.env_local` (WEBEX_INTEGRATION_ID, WEBEX_INTEGRATION_CLIENT_ID, WEBEX_INTEGRATION_CLIENT_SECRET). Save the file.
+  * login to https://developer.webex.com
+  * click on your avatar in the upper right corner and select **[My Webex Apps](https://developer.webex.com/my-apps)**
+  * click on **[Create New App](https://developer.webex.com/my-apps/new)** and select **Create an Integration**
+  * set the **Redirect URI** to `http://localhost:5050/manager`
+  * fill in the required fields and select Scopes `spark:people_read` and all that start with `spark-compliance` (`spark-compliance:events_read`, `spark-compliance:memberships_write`, etc.)
+  * click **Save**
+  * create a copy of `.env_sample` (for example `.env_local`)
+  * copy & paste **Integration ID**, **Client ID** and **Client Secret** to the appropriate variables in `.env_local` (WEBEX_INTEGRATION_ID, WEBEX_INTEGRATION_CLIENT_ID, WEBEX_INTEGRATION_CLIENT_SECRET). Save the file.
 2. **Create Compliance Officer account**
-  1. login to [Webex Control Hub](https://admin.webex.com) and select a user who will act as a Compliance Officer (or create a new user).
-  2. in the **Roles and Security** click on **Service Access** and check the **Compliance Officer** checkbox
-  3. click **Save**
+  * login to [Webex Control Hub](https://admin.webex.com) and select a user who will act as a Compliance Officer (or create a new user).
+  * in the **Roles and Security** click on **Service Access** and check the **Compliance Officer** checkbox
+  * click **Save**
 3. **Start the database docker container** `docker run -p 8000:8000 amazon/dynamodb-local`
 4. **Prepare Python3 virtual environment**
-  1. run command `python3 -m venv venv`
-  2. import required packages `pip install -r requirements.txt`
-  3. activate the virtual environment `source venv/bin/activate`
+  * run command `python3 -m venv venv`
+  * import required packages `pip install -r requirements.txt`
+  * activate the virtual environment `source venv/bin/activate`
 5. **Run the application script** `dotenv -f .env_local run python wxt_compliance.py -u compliance_officer@email.address` where `compliance_officer@email.address` is the e-mail address of Compliance Officer created in previous step.
 6. Because you have not ran the OAuth grant flow yet, the application will log `ERROR:wxt_compliance:No access tokens for user compliance_officer@email.address. Authorize the user first.`
 7. Open `http://localhost:5050/authorize`
