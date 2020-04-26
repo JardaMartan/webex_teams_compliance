@@ -12,6 +12,7 @@ from urllib.parse import urlparse, quote
 from webexteamssdk import WebexTeamsAPI, ApiError, AccessToken
 webex_api = WebexTeamsAPI()
 
+import boto3
 import ddb_single_table
 
 import json, requests
@@ -49,7 +50,9 @@ signal.signal(signal.SIGTERM, sigterm_handler)
 signal.signal(signal.SIGINT, sigterm_handler)
 
 thread_executor = concurrent.futures.ThreadPoolExecutor()
-username = None
+wxt_username = None
+wxt_resource = None
+wxt_type = None
 
 class AccessTokenAbs(AccessToken):
     def __init__(self, access_token_json):
@@ -120,7 +123,7 @@ def startup():
         ddb_single_table.setup()
         
     flask_app.logger.debug("Starting event check...")
-    thread_executor.submit(check_events, EVENT_CHECK_INTERVAL, username)
+    thread_executor.submit(check_events, EVENT_CHECK_INTERVAL, wxt_username, wxt_resource, wxt_type)
 
 @flask_app.route("/")
 def hello():
@@ -218,24 +221,32 @@ def query_events():
     
     return results
     
-def check_events(check_interval, username):
+def check_events(check_interval, wx_username, wx_resource, wx_type):
     tokens = None
     wxt_client = None
+    
+    xargs = {}
+    if wx_resource is not None:
+        xargs["resource"] = wx_resource
+    if wx_type is not None:
+        xargs["type"] = wx_type
+    flask_app.logger.debug("Additional args: {}".format(xargs))
+    
     from_time = datetime.utcnow()
     while True:
         # flask_app.logger.debug("Check events tick.")
         
         if tokens is None:
-            tokens = get_tokens_for_user(username)
+            tokens = get_tokens_for_user(wx_username)
             if tokens:
                 wxt_client = WebexTeamsAPI(access_token=tokens.access_token)
             else:
-                flask_app.logger.error("No access tokens for user {}. Authorize the user first.".format(username))
+                flask_app.logger.error("No access tokens for user {}. Authorize the user first.".format(wx_username))
         else:
             token_delta = datetime.fromtimestamp(float(tokens.expires_at)) - datetime.utcnow()
             if token_delta.total_seconds() < SAFE_TOKEN_DELTA:
                 flask_app.logger.info("Access token is about to expire, renewing...")
-                tokens = refresh_tokens_for_user(username)
+                tokens = refresh_tokens_for_user(wx_username)
                 wxt_client = WebexTeamsAPI(access_token=tokens.access_token)
                 
                 
@@ -245,9 +256,8 @@ def check_events(check_interval, username):
                 from_stamp = from_time.isoformat()+"Z"
                 to_stamp = to_time.isoformat()+"Z"
                 flask_app.logger.debug("check interval {} - {}".format(from_stamp, to_stamp))
-                event_list = wxt_client.events.list(_from=from_stamp, to=to_stamp)
+                event_list = wxt_client.events.list(_from=from_stamp, to=to_stamp, **xargs)
                 for event in event_list:
-                    # flask_app.logger.info("{} {} {} by {}".format(event.created, event.resource, event.type, event.data))
                     actor = wxt_client.people.get(event.actorId)
                     
                     # TODO: information logging to an external system
@@ -300,10 +310,9 @@ if __name__ == "__main__":
     
     flask_app.logger.info("Using database: {} - {}".format(os.getenv("DYNAMODB_ENDPOINT_URL"), os.getenv("DYNAMODB_TABLE_NAME")))
     
-    username = args.username
-    
-    tokens = get_tokens_for_user(username)
-
-    
+    wxt_username = args.username
+    wxt_resource = args.resource
+    wxt_type = args.type
+        
     start_runner()
     flask_app.run(host="0.0.0.0", port=5050)
