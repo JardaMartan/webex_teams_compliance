@@ -53,6 +53,7 @@ thread_executor = concurrent.futures.ThreadPoolExecutor()
 wxt_username = None
 wxt_resource = None
 wxt_type = None
+wxt_actor_email = None
 
 class AccessTokenAbs(AccessToken):
     def __init__(self, access_token_json):
@@ -123,7 +124,7 @@ def startup():
         ddb_single_table.setup()
         
     flask_app.logger.debug("Starting event check...")
-    thread_executor.submit(check_events, EVENT_CHECK_INTERVAL, wxt_username, wxt_resource, wxt_type)
+    thread_executor.submit(check_events, EVENT_CHECK_INTERVAL, wxt_username, wxt_resource, wxt_type, wxt_actor_email)
 
 @flask_app.route("/")
 def hello():
@@ -221,9 +222,10 @@ def query_events():
     
     return results
     
-def check_events(check_interval, wx_username, wx_resource, wx_type):
+def check_events(check_interval=EVENT_CHECK_INTERVAL, wx_username=None, wx_resource=None, wx_type=None, wx_actor_email=None):
     tokens = None
     wxt_client = None
+    new_client = False
     
     xargs = {}
     if wx_resource is not None:
@@ -240,6 +242,7 @@ def check_events(check_interval, wx_username, wx_resource, wx_type):
             tokens = get_tokens_for_user(wx_username)
             if tokens:
                 wxt_client = WebexTeamsAPI(access_token=tokens.access_token)
+                new_client = True
             else:
                 flask_app.logger.error("No access tokens for user {}. Authorize the user first.".format(wx_username))
         else:
@@ -248,7 +251,17 @@ def check_events(check_interval, wx_username, wx_resource, wx_type):
                 flask_app.logger.info("Access token is about to expire, renewing...")
                 tokens = refresh_tokens_for_user(wx_username)
                 wxt_client = WebexTeamsAPI(access_token=tokens.access_token)
+                new_client = True
                 
+        if new_client:
+            if wx_actor_email is not None:
+                try:
+                    wx_actor_list = wxt_client.people.list(email=wx_actor_email)
+                    for person in wx_actor_list:
+                        xargs["actorId"] = person.id
+                except ApiError as e:
+                    flask_app.logger.error("People list API request error: {}".format(e))
+            new_client = False
                 
         if wxt_client:
             try:
@@ -313,6 +326,7 @@ if __name__ == "__main__":
     wxt_username = args.username
     wxt_resource = args.resource
     wxt_type = args.type
+    wxt_actor_email = args.actor
         
     start_runner()
     flask_app.run(host="0.0.0.0", port=5050)
