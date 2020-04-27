@@ -112,6 +112,10 @@ def refresh_tokens_for_user(user_email):
     
 # Flask part of the code
 
+"""
+1. initialize database table if needed
+2. start event checking thread
+"""
 @flask_app.before_first_request
 def startup():
     dynamodb, tablename, endpoint_url = ddb_single_table.get_db_env()
@@ -130,11 +134,17 @@ def startup():
 def hello():
     return "Hello World!"
 
+"""
+OAuth proccess done
+"""
 @flask_app.route("/authdone", methods=["GET"])
 def authdone():
     ## TODO: post the information & help, maybe an event creation form to the 1-1 space with the user
     return "Thank you for providing the authorization. You may close this browser window."
 
+"""
+OAuth grant flow start
+"""
 @flask_app.route("/authorize", methods=["GET"])
 def authorize():
     myUrlParts = urlparse(request.url)
@@ -149,6 +159,14 @@ def authorize():
 
     return redirect(join_url)
     
+"""
+OAuth grant flow redirect url
+generate access and refresh tokens using "code" generated in OAuth grant flow
+after user successfully authenticated to Webex
+
+See: https://developer.webex.com/blog/real-world-walkthrough-of-building-an-oauth-webex-integration
+https://developer.webex.com/docs/integrations
+"""   
 @flask_app.route("/manager", methods=["GET"])
 def manager():
     if request.args.get("error"):
@@ -184,6 +202,9 @@ def manager():
         
     return redirect(url_for("authdone"))
     
+"""
+Manual token refresh of a single user. Not needed if the thread is running.
+"""
 @flask_app.route("/tokenrefresh", methods=["GET"])
 def token_refresh():
     user_id = request.args.get("user_id")
@@ -206,26 +227,35 @@ def refresh_token_for_user(user_id):
         
     return "token refresh for user {} done".format(user_id)
 
+"""
+Manual token refresh of all users. Not needed if the thread is running.
+"""
 @flask_app.route("/tokenrefreshall", methods=["GET"])
 def token_refresh_all():
     results = ""
-    user_tokens = get_db_record_by_secondary_key_list("TOKENS")
+    user_tokens = ddb_single_table.get_db_record_by_secondary_key_list("TOKENS")
     for token in user_tokens:
         flask_app.logger.debug("Refreshing: {} token".format(token["pk"]))
         results += refresh_token_for_user(token["pk"])+"\n"
     
     return results
-    
+
+# TODO: manual query of events API
 @flask_app.route("/queryevents", methods=["GET"])
 def query_events():
     results = ""
     
     return results
-    
+
+"""
+Check events API thread. Infinite loop which periodically checks the Events API.
+Doesn't work until "wx_username" runs through OAuth grant flow above.
+Access token is automatically refreshed if needed using Refresh Token.
+No additional user authentication is required.
+"""
 def check_events(check_interval=EVENT_CHECK_INTERVAL, wx_username=None, wx_resource=None, wx_type=None, wx_actor_email=None):
     tokens = None
     wxt_client = None
-    new_client = False
     
     xargs = {}
     if wx_resource is not None:
@@ -237,32 +267,33 @@ def check_events(check_interval=EVENT_CHECK_INTERVAL, wx_username=None, wx_resou
     from_time = datetime.utcnow()
     while True:
         # flask_app.logger.debug("Check events tick.")
-        
+
+# check for token until there is one available in the DB        
         if tokens is None:
             tokens = get_tokens_for_user(wx_username)
             if tokens:
                 wxt_client = WebexTeamsAPI(access_token=tokens.access_token)
-                new_client = True
+
+# get actorId if required
+                if wx_actor_email is not None:
+                    try:
+                        wx_actor_list = wxt_client.people.list(email=wx_actor_email)
+                        for person in wx_actor_list:
+                            xargs["actorId"] = person.id
+                    except ApiError as e:
+                        flask_app.logger.error("People list API request error: {}".format(e))
             else:
                 flask_app.logger.error("No access tokens for user {}. Authorize the user first.".format(wx_username))
         else:
+# renew access token using refresh token if needed
             token_delta = datetime.fromtimestamp(float(tokens.expires_at)) - datetime.utcnow()
             if token_delta.total_seconds() < SAFE_TOKEN_DELTA:
                 flask_app.logger.info("Access token is about to expire, renewing...")
                 tokens = refresh_tokens_for_user(wx_username)
                 wxt_client = WebexTeamsAPI(access_token=tokens.access_token)
                 new_client = True
-                
-        if new_client:
-            if wx_actor_email is not None:
-                try:
-                    wx_actor_list = wxt_client.people.list(email=wx_actor_email)
-                    for person in wx_actor_list:
-                        xargs["actorId"] = person.id
-                except ApiError as e:
-                    flask_app.logger.error("People list API request error: {}".format(e))
-            new_client = False
-                
+
+# query the Events API        
         if wxt_client:
             try:
                 to_time = datetime.utcnow()
@@ -280,7 +311,11 @@ def check_events(check_interval=EVENT_CHECK_INTERVAL, wx_username=None, wx_resou
                 flask_app.logger.error("Events API request error: {}".format(e))
 
         time.sleep(check_interval)
-    
+
+"""
+Independent thread startup, see:
+https://networklore.com/start-task-with-flask/
+"""
 def start_runner():
     def start_loop():
         not_started = True
