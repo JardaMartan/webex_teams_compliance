@@ -28,4 +28,4 @@ This is a sample implementation of [Compliance](https://developer.webex.com/docs
 9. In the application log you will see the Access and Refresh Tokens being created and saved in DynamoDB.
 10. The application will start monitoring the Events API.
 11. Try sending a message in Webex Teams, creating s Space or adding/deleting users to a Space. All should be logged by the application.
-12. If you want to monitor only certain type of events, stop the application using Ctrl-C and add `--resource` or `--type` parameters with appropriate values.
+12. If you want to monitor only certain type of events, stop the application using Ctrl-C and add `--resource` or `--type` parameters with appropriate values. You can also monitor only certain person's activites by setting `--actor` parameter (person's e-mail address).
